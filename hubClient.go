@@ -1,4 +1,4 @@
-package wsfunc
+package wshub
 
 import (
 	"encoding/json"

@@ -1,4 +1,4 @@
-package wsfunc
+package wshub
 
 import "github.com/gorilla/websocket"
 
