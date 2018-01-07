@@ -20,22 +20,6 @@ type Hub struct {
 	upgrader   websocket.Upgrader
 }
 
-//New : Create Hub Route
-func New(hubPath string) *Hub {
-	h := &Hub{
-		path:       hubPath,
-		Clients:    make(map[[16]byte]*hubClient),
-		register:   make(chan *hubClient),
-		unregister: make(chan *hubClient),
-		hubFunc:    make(map[string]func(message string) (msg HubMessage, err error)),
-		upgrader:   websocket.Upgrader{},
-	}
-
-	go h.run()
-
-	return h
-}
-
 //AddFunc : add webstocket func
 func (h *Hub) AddFunc(funcName string, msgFunc func(JSON string) (msg HubMessage, err error)) {
 	funcName = strings.ToLower(funcName)
