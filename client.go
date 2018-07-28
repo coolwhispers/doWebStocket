@@ -1,6 +1,7 @@
 package wshub
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/gorilla/websocket"
@@ -11,9 +12,20 @@ type ClientID [16]byte
 
 type client struct {
 	ID   ClientID
-	Send chan []byte
+	send chan []byte
 	hub  *Hub
 	conn *websocket.Conn
+}
+
+func (c *client) Send(msg interface{}) {
+	b, err := json.Marshal(msg)
+
+	if err != nil {
+		log.Printf("error: %v", err)
+		return
+	}
+
+	c.send <- b
 }
 
 func (c *client) read() {
@@ -47,7 +59,7 @@ func (c *client) write() {
 
 	for {
 		select {
-		case msg, ok := <-c.Send:
+		case msg, ok := <-c.send:
 			if !ok {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				break
@@ -55,8 +67,8 @@ func (c *client) write() {
 
 			c.sendMsg(msg)
 
-			for len(c.Send) > 0 {
-				c.sendMsg(<-c.Send)
+			for len(c.send) > 0 {
+				c.sendMsg(<-c.send)
 			}
 		}
 	}

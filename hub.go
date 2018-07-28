@@ -26,7 +26,7 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := &client{ID: h.createID(r), hub: h, conn: conn, Send: make(chan []byte, 256)}
+	c := &client{ID: h.createID(r), hub: h, conn: conn, send: make(chan []byte, 256)}
 
 	go c.read()
 	go c.write()
@@ -57,7 +57,7 @@ func (h *Hub) run() {
 		case client := <-h.unregister:
 			if _, ok := h.Clients[client.ID]; ok {
 				delete(h.Clients, client.ID)
-				close(client.Send)
+				close(client.send)
 			}
 		}
 	}
