@@ -3,13 +3,12 @@ package wshub
 import "github.com/gorilla/websocket"
 
 //New : Create Hub Route
-func New(hubPath string) *Hub {
+func New() *Hub {
 	h := &Hub{
-		path:       hubPath,
-		Clients:    make(map[[16]byte]*hubClient),
-		register:   make(chan *hubClient),
-		unregister: make(chan *hubClient),
-		hubFunc:    make(map[string]func(message string) (msg HubMessage, err error)),
+		Clients:    make(map[ClientID]*client),
+		register:   make(chan *client),
+		unregister: make(chan *client),
+		HubFunc:    nil,
 		upgrader:   websocket.Upgrader{},
 	}
 

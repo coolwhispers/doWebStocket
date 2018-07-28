@@ -3,30 +3,18 @@ package wshub
 import (
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
-
 	"github.com/gorilla/websocket"
 )
 
 //Hub :
 type Hub struct {
-	path       string
-	Clients    map[[16]byte]*hubClient
-	register   chan *hubClient
-	unregister chan *hubClient
-	hubFunc    map[string]func(JSON string) (msg HubMessage, err error)
+	Clients    map[ClientID]*client
+	register   chan *client
+	unregister chan *client
+	HubFunc    func(clientID ClientID, msg []byte) (err error)
 	upgrader   websocket.Upgrader
-}
-
-//AddFunc : add webstocket func
-func (h *Hub) AddFunc(funcName string, msgFunc func(JSON string) (msg HubMessage, err error)) {
-	funcName = strings.ToLower(funcName)
-	if _, ok := h.hubFunc[funcName]; ok {
-		panic("hubFunc is exist")
-	}
-	h.hubFunc[funcName] = msgFunc
 }
 
 //Handler : HTTP Handler func
@@ -38,7 +26,7 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := &hubClient{id: h.createID(), hub: h, conn: conn, Send: make(chan *HubMessage, 256)}
+	c := &client{ID: h.createID(r), hub: h, conn: conn, Send: make(chan []byte, 256)}
 
 	go c.read()
 	go c.write()
@@ -46,11 +34,16 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 	h.register <- c
 }
 
-func (h *Hub) createID() [16]byte {
-	clientID := uuid.New()
+func newUUIDtoCID(r *http.Request) ClientID {
+	var id [16]byte
+	id = uuid.New()
+	return id
+}
+func (h *Hub) createID(r *http.Request) [16]byte {
+	clientID := newUUIDtoCID(r)
 	_, ok := h.Clients[clientID]
 	for ok {
-		clientID = uuid.New()
+		clientID = newUUIDtoCID(r)
 		_, ok = h.Clients[clientID]
 	}
 	return clientID
@@ -60,10 +53,10 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.Clients[client.id] = client
+			h.Clients[client.ID] = client
 		case client := <-h.unregister:
-			if _, ok := h.Clients[client.id]; ok {
-				delete(h.Clients, client.id)
+			if _, ok := h.Clients[client.ID]; ok {
+				delete(h.Clients, client.ID)
 				close(client.Send)
 			}
 		}
