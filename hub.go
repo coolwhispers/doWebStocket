@@ -1,6 +1,7 @@
 package wshub
 
 import (
+	"crypto/sha256"
 	"log"
 	"net/http"
 
@@ -34,16 +35,19 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 	h.register <- c
 }
 
-func newUUIDtoCID(r *http.Request) ClientID {
+func newID(r *http.Request) ClientID {
 	var id [16]byte
 	id = uuid.New()
+	h := sha256.New()
+	h.Sum(id[:])
+
 	return id
 }
-func (h *Hub) createID(r *http.Request) [16]byte {
-	clientID := newUUIDtoCID(r)
+func (h *Hub) createID(r *http.Request) ClientID {
+	clientID := newID(r)
 	_, ok := h.Clients[clientID]
 	for ok {
-		clientID = newUUIDtoCID(r)
+		clientID = newID(r)
 		_, ok = h.Clients[clientID]
 	}
 	return clientID
