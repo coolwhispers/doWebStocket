@@ -44,11 +44,7 @@ func (c *client) read() {
 			break
 		}
 
-		err = c.hub.HubFunc(c.ID, msg)
-
-		if err == nil {
-			log.Println(err)
-		}
+		c.hub.HubFunc(c.ID, msg)
 	}
 }
 

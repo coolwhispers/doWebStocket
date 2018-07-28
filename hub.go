@@ -13,7 +13,7 @@ type Hub struct {
 	Clients    map[ClientID]*client
 	register   chan *client
 	unregister chan *client
-	HubFunc    func(clientID ClientID, msg []byte) (err error)
+	HubFunc    func(cid ClientID, msg []byte)
 	upgrader   websocket.Upgrader
 }
 
