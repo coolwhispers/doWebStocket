@@ -36,7 +36,7 @@ hub.OnMessage = func(cid wshub.ClientID, msg []byte) {
 ```
 
 ```go
-hub.OnOpen = func(cid wshub.ClientID) {
+hub.OnOpen = func(cid ClientID, r *http.Request) {
 
     log.Printf("client %x was connected.", cid)
 

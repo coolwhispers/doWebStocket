@@ -84,12 +84,12 @@ func (c *client) read() {
 //Hub for websocket
 type Hub struct {
 	Clients    map[ClientID]*client
-	register   chan *client
+	register   chan *regInfo
 	unregister chan *client
-	OnMessage  func(clientID ClientID, msg []byte)
-	OnOpen     func(clientID ClientID)
-	OnClose    func(clientID ClientID)
-	OnError    func(clientID ClientID, err error)
+	OnMessage  func(cid ClientID, msg []byte)
+	OnOpen     func(cid ClientID, r *http.Request)
+	OnClose    func(cid ClientID)
+	OnError    func(cid ClientID, err error)
 }
 
 var upgrader websocket.Upgrader
@@ -112,15 +112,20 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 	go c.read()
 	go c.write()
 
-	h.register <- c
+	h.register <- &regInfo{Client: c, Request: r}
+}
+
+type regInfo struct {
+	Client  *client
+	Request *http.Request
 }
 
 func (h *Hub) run() {
 	for {
 		select {
-		case client := <-h.register:
+		case info := <-h.register:
 
-			client.ID = func(h *Hub) ClientID {
+			info.Client.ID = func(h *Hub) ClientID {
 				var id [16]byte
 				id = uuid.New()
 
@@ -131,9 +136,9 @@ func (h *Hub) run() {
 				return id
 			}(h)
 
-			h.Clients[client.ID] = client
+			h.Clients[info.Client.ID] = info.Client
 
-			h.OnOpen(client.ID)
+			h.OnOpen(info.Client.ID, info.Request)
 		case client := <-h.unregister:
 			client.run = false
 			if _, ok := h.Clients[client.ID]; ok {
@@ -150,7 +155,7 @@ func (h *Hub) run() {
 func New() *Hub {
 	h := &Hub{
 		Clients:    make(map[ClientID]*client),
-		register:   make(chan *client),
+		register:   make(chan *regInfo),
 		unregister: make(chan *client),
 	}
 
