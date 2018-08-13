@@ -3,7 +3,7 @@
 ```go
 func main() {
     hub := wshub.New()
-    hub.HubFunc = func(cid wshub.ClientID, msg []byte) {
+    hub.OnMessage = func(cid wshub.ClientID, msg []byte) {
 
         // do something...ex: parseByteToJsonObject(msg)
 
