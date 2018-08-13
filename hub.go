@@ -1,7 +1,8 @@
-package wshub
+package wshub2
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -9,25 +10,98 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//Hub :
+//ClientID is a type use for Client ID type
+type ClientID [16]byte
+
+type client struct {
+	ID   ClientID
+	send chan []byte
+	conn *websocket.Conn
+	hub  *Hub
+}
+
+func (c *client) SendMsg(msg interface{}) {
+	b, err := json.Marshal(msg)
+
+	if err != nil {
+		log.Printf("error: %v", err)
+		return
+	}
+
+	c.send <- b
+}
+
+func (c *client) write() {
+	defer func() {
+		c.hub.unregister <- c
+	}()
+
+	for {
+		select {
+		case msg, ok := <-c.send:
+
+			c.sendMsg(ok, msg)
+
+			if len(c.send) > 0 {
+				msg, ok := <-c.send
+				c.sendMsg(ok, msg)
+			}
+		}
+	}
+}
+
+func (c *client) sendMsg(ok bool, msg []byte) {
+	if !ok {
+		c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+		return
+	}
+
+	c.conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+func (c *client) read() {
+	defer func() {
+		c.hub.unregister <- c
+	}()
+
+	for {
+		mt, msg, err := c.conn.ReadMessage()
+
+		if err != nil {
+			log.Printf("error: %v", err)
+			break
+		}
+
+		switch mt {
+		default:
+			c.hub.MsgFunc(c.ID, msg)
+		}
+	}
+}
+
+//Hub for websocket
 type Hub struct {
 	Clients    map[ClientID]*client
 	register   chan *client
 	unregister chan *client
-	HubFunc    func(cid ClientID, msg []byte)
-	upgrader   websocket.Upgrader
+	MsgFunc    func(clientID ClientID, msg []byte)
 }
 
-//Handler : HTTP Handler func
+var upgrader websocket.Upgrader
+
+//Handler is for register websocket client
 func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
-		log.Println(err)
 		return
 	}
 
-	c := &client{ID: h.createID(r), hub: h, conn: conn, send: make(chan []byte, 256)}
+	c := &client{
+		conn: conn,
+		send: make(chan []byte),
+		hub:  h,
+	}
 
 	go c.read()
 	go c.write()
@@ -43,23 +117,24 @@ func newID(r *http.Request) ClientID {
 
 	return id
 }
-func (h *Hub) createID(r *http.Request) ClientID {
-	clientID := newID(r)
-	_, ok := h.Clients[clientID]
-	for ok {
-		clientID = newID(r)
-		_, ok = h.Clients[clientID]
-	}
-	return clientID
-}
 
 func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
+			client.ID = func() ClientID {
+				var id [16]byte
+				id = uuid.New()
+				h := sha256.New()
+				h.Sum(id[:])
+
+				return id
+			}()
+
 			h.Clients[client.ID] = client
 		case client := <-h.unregister:
 			if _, ok := h.Clients[client.ID]; ok {
+				client.conn.Close()
 				delete(h.Clients, client.ID)
 				close(client.send)
 			}
@@ -67,7 +142,21 @@ func (h *Hub) run() {
 	}
 }
 
-//JsHandler :
-func (h *Hub) JsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Hello, world!"))
+//New a Websocket Hub
+func New() *Hub {
+	h := &Hub{
+		Clients:    make(map[ClientID]*client),
+		register:   make(chan *client),
+		unregister: make(chan *client),
+	}
+
+	go h.run()
+
+	h.MsgFunc = func(clientID ClientID, msg []byte) {
+		str := string(msg[:])
+		log.Printf("client: %x, msg: %v", clientID, str)
+		h.Clients[clientID].SendMsg(str)
+	}
+
+	return h
 }

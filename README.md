@@ -1,11 +1,11 @@
-# wshub-go
+# WebSocket Hub
 
 ```go
 func main() {
     hub := wshub.New()
     hub.HubFunc = func(cid wshub.ClientID, msg []byte) {
 
-        // do something...ex: parseByte(msg)
+        // do something...ex: parseByteToJsonObject(msg)
 
     }
     // register router
@@ -21,7 +21,7 @@ func main() {
 hub.HubFunc = func(cid wshub.ClientID, msg []byte) {
 
     // parse client msg like...
-    parseByte(msg)
+    obj := parseByteToJsonObject(msg)
 
 }
 ```
