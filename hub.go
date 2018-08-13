@@ -1,7 +1,6 @@
-package wshub2
+package wshub
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -18,13 +17,16 @@ type client struct {
 	send chan []byte
 	conn *websocket.Conn
 	hub  *Hub
+	run  bool
 }
 
 func (c *client) SendMsg(msg interface{}) {
 	b, err := json.Marshal(msg)
 
 	if err != nil {
-		log.Printf("error: %v", err)
+		if c.hub.OnError != nil {
+			c.hub.OnError(c.ID, err)
+		}
 		return
 	}
 
@@ -36,16 +38,14 @@ func (c *client) write() {
 		c.hub.unregister <- c
 	}()
 
-	for {
-		select {
-		case msg, ok := <-c.send:
+	for c.run {
+		msg, ok := <-c.send
 
+		c.sendMsg(ok, msg)
+
+		if len(c.send) > 0 {
+			msg, ok := <-c.send
 			c.sendMsg(ok, msg)
-
-			if len(c.send) > 0 {
-				msg, ok := <-c.send
-				c.sendMsg(ok, msg)
-			}
 		}
 	}
 }
@@ -64,17 +64,19 @@ func (c *client) read() {
 		c.hub.unregister <- c
 	}()
 
-	for {
+	for c.run {
 		mt, msg, err := c.conn.ReadMessage()
 
 		if err != nil {
-			log.Printf("error: %v", err)
+			if c.hub.OnError != nil {
+				c.hub.OnError(c.ID, err)
+			}
 			break
 		}
 
 		switch mt {
 		default:
-			c.hub.MsgFunc(c.ID, msg)
+			c.hub.OnMessage(c.ID, msg)
 		}
 	}
 }
@@ -84,7 +86,10 @@ type Hub struct {
 	Clients    map[ClientID]*client
 	register   chan *client
 	unregister chan *client
-	MsgFunc    func(clientID ClientID, msg []byte)
+	OnMessage  func(clientID ClientID, msg []byte)
+	OnOpen     func(clientID ClientID)
+	OnClose    func(clientID ClientID)
+	OnError    func(clientID ClientID, err error)
 }
 
 var upgrader websocket.Upgrader
@@ -101,6 +106,7 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 		conn: conn,
 		send: make(chan []byte),
 		hub:  h,
+		run:  true,
 	}
 
 	go c.read()
@@ -109,34 +115,32 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 	h.register <- c
 }
 
-func newID(r *http.Request) ClientID {
-	var id [16]byte
-	id = uuid.New()
-	h := sha256.New()
-	h.Sum(id[:])
-
-	return id
-}
-
 func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			client.ID = func() ClientID {
+
+			client.ID = func(h *Hub) ClientID {
 				var id [16]byte
 				id = uuid.New()
-				h := sha256.New()
-				h.Sum(id[:])
+
+				for _, ok := h.Clients[id]; ok; {
+					id = uuid.New()
+				}
 
 				return id
-			}()
+			}(h)
 
 			h.Clients[client.ID] = client
+
+			h.OnOpen(client.ID)
 		case client := <-h.unregister:
+			client.run = false
 			if _, ok := h.Clients[client.ID]; ok {
+				h.OnClose(client.ID)
 				client.conn.Close()
-				delete(h.Clients, client.ID)
 				close(client.send)
+				delete(h.Clients, client.ID)
 			}
 		}
 	}
@@ -152,10 +156,10 @@ func New() *Hub {
 
 	go h.run()
 
-	h.MsgFunc = func(clientID ClientID, msg []byte) {
+	h.OnMessage = func(cid ClientID, msg []byte) {
 		str := string(msg[:])
-		log.Printf("client: %x, msg: %v", clientID, str)
-		h.Clients[clientID].SendMsg(str)
+		log.Printf("client %x send msg: %v", cid, str)
+		h.Clients[cid].SendMsg(str)
 	}
 
 	return h
